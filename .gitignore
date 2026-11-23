@@ -13,3 +13,7 @@ packer/manifest.json
 
 # Ansible
 *.retry
+
+# Saved plans can contain secrets
+tfplan
+*.tfplan
