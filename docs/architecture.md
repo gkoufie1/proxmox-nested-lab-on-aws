@@ -11,7 +11,7 @@
 
 ## Boot sequence
 
-1. `terraform apply` zips `ansible/`, uploads it to S3, stores a random root password in SSM, and launches the Spot instance from the newest `proxmox-ve9-l1-*` AMI.
+1. `terraform apply` zips `ansible/`, uploads it to S3, stores a random root password in SSM, and launches the instance from the newest `proxmox-ve9-l1-*` AMI through a one-shot EC2 Fleet that can use any AZ offering the type.
 2. User data schedules `shutdown -h +TTL` first. Shutdown behavior is `terminate`, so the cost cap holds even if everything after it fails.
 3. User data then downloads the bundle and runs `ansible-playbook site.yml` locally:
    1. **l1_host**: checks VT-x is exposed, creates vmbr1 plus the VLAN gateways and NAT, builds a ZFS pool `tank` on the EBS data volume (ARC capped at 4 GiB), and starts apt-cacher-ng and qnetd.
@@ -62,9 +62,21 @@ ISO. Reusing one script for the AMI and the nodes keeps one code path to debug.
 either side. qnetd sits outside the cluster, on the L1 host. On real hardware it
 belongs on a separate small machine.
 
+**On-demand, not Spot.** On 2026-11-23, Spot requests with nested
+virtualization failed in every us-east-1 AZ, while plain Spot and on-demand with
+nested virtualization launched in the same AZ minutes apart. On-demand
+r8i.4xlarge is $1.11/h, about 3× Spot, so the TTL does more of the cost work.
+`use_spot` stays as an option to retry later.
+
+**One-shot EC2 Fleet, not `aws_instance`.** The fleet lists a subnet in every
+AZ that offers the type and launches wherever there's capacity, failing in
+seconds if there's none. A single `aws_instance` pinned to one AZ retried
+capacity errors for 15+ minutes.
+
 **Self-terminating TTL over Lambda/EventBridge reapers.** Fewer moving parts, and
-it can't be skipped by a failed bootstrap. The trade-off is that Terraform state
-drifts when it fires; the next `apply` reconciles it.
+it can't be skipped by a failed bootstrap. The trade-off is that Terraform
+doesn't notice when the TTL fires: run `terraform destroy` before the next
+`apply` (or `apply -replace=aws_ec2_fleet.l1`).
 
 ## Limits and things to verify on first run
 
@@ -73,13 +85,15 @@ These parts are written but haven't been run end to end yet. Check them in this 
 1. ~~**Proxmox kernel on EC2.**~~ **Verified 2026-11-23:** the AMI build boots
    Proxmox kernel 7.0.14-pve on Nitro (t3) and installs PVE 9.2.32. The first
    attempt failed only because Proxmox's `grub-pc` asked for an install disk;
-   `pve-install.sh` now preseeds it.
-2. **Nested virtualization at launch.** `terraform validate` accepts
-   `cpu_options.nested_virtualization` (AWS provider 6.69.1). Whether EC2
-   accepts it alongside Spot is only proven by the first `apply`; the
-   `l1_host` role fails fast if `vmx` is missing.
-3. **Spot capacity.** r8i Spot can be short in some AZs. Set `availability_zone`
-   or `use_spot = false`.
+   `pve-install.sh` now preseeds it. The first r8i launch then came up with
+   **no network**: the NIC is `enp39s0` there but `ens5` on the t3 build
+   instance, and the image only had config for the latter. The image now
+   DHCPs any `en*` NIC via systemd-networkd and ships the SSM agent (Debian
+   AMIs don't); verified on an m8i.large, which names its NIC the same way.
+2. ~~**Nested virtualization at launch.**~~ **Verified 2026-11-23:** an
+   on-demand r8i.4xlarge launches with `NestedVirtualization: enabled`.
+3. **Spot + nested virtualization.** Not available when tested (see Decisions).
+   Retry with `use_spot = true` occasionally; the fleet fails fast if it still isn't.
 4. **Guest NIC names.** The roles assume `ens18`–`ens21` (i440fx + virtio). Check with `ip -br link` on pve01.
 5. **L3 KVM.** VMs *inside* the nested nodes need a third level of
    virtualization. L1 exposes `vmx` to L2 (`--cpu host`), but performance and

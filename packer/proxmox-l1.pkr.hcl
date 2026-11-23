@@ -19,9 +19,12 @@ variable "region" {
   default = "us-east-1"
 }
 
-variable "build_instance_type" {
-  type    = string
-  default = "t3.medium"
+# Builds run on Spot: they need no nested virtualization, cost less, and use the
+# Spot vCPU quota, so a build can run while an on-demand lab holds the
+# on-demand quota. Several types so one short pool doesn't block the build.
+variable "build_instance_types" {
+  type    = list(string)
+  default = ["t3.medium", "t3a.medium", "m7i.large", "m6i.large"]
 }
 
 locals {
@@ -30,10 +33,14 @@ locals {
 }
 
 source "amazon-ebs" "proxmox_l1" {
-  region        = var.region
-  instance_type = var.build_instance_type
-  ami_name      = "proxmox-ve9-l1-${local.stamp}"
-  ssh_username  = "admin"
+  region              = var.region
+  spot_instance_types = var.build_instance_types
+  spot_price          = "auto"
+  ami_name            = "proxmox-ve9-l1-${local.stamp}"
+  ssh_username        = "admin"
+
+  # Don't ship Packer's temporary public key in the image
+  ssh_clear_authorized_keys = true
 
   # Uses the default VPC; SSH is opened only to your current public IP
   associate_public_ip_address               = true

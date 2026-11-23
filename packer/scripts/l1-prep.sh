@@ -47,6 +47,22 @@ ExecStart=/usr/local/sbin/pve-hosts-fix
 WantedBy=multi-user.target
 EOF
 
+# DHCP on whatever the NIC is called. The build instance (t3) names it ens5;
+# r8i names it enp39s0. cloud-init's generated config is keyed to the build
+# instance's NIC and did not come up on the r8i, leaving it with no network.
+cat > /etc/systemd/network/99-ec2-dhcp.network <<'EOF'
+[Match]
+Name=en* eth*
+
+[Network]
+DHCP=ipv4
+
+[DHCPv4]
+# Keep the fixed Proxmox hostname
+UseHostname=false
+EOF
+
 systemctl daemon-reload
+systemctl enable systemd-networkd
 systemctl enable --now pve-hosts-fix.service
 hostname --ip-address
