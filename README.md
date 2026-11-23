@@ -1,95 +1,90 @@
-# Proxmox Lab on AWS: 16-node cluster, rebuilt from Git on demand
+# Proxmox Lab on AWS
 
-A 16-node Proxmox VE 9 cluster with VLAN-separated networks, a QDevice
-tie-breaker and optional hyper-converged Ceph. It runs **nested on a single
-EC2 instance** and is built entirely by Packer, Terraform and Ansible. One
-`terraform apply` brings it up in roughly 30–40 minutes. It shuts itself down
-after a fixed time limit (TTL), so between sessions it costs almost nothing.
+**A 16-server Proxmox cluster that builds itself from code, runs on one rented
+AWS machine, and deletes itself when you're done.**
+
+Proxmox is software companies use to run many virtual machines across a group
+of servers. Practicing with it normally means buying a rack of hardware. This
+project rents one large AWS server by the hour and runs 16 virtual Proxmox
+servers inside it, joined into a cluster.
 
 ```mermaid
-flowchart TB
-  pc["Your PC<br/>Terraform · Packer · AWS CLI"]
-  pc -- "SSM Session Manager<br/>(no inbound ports)" --> l1
-
-  subgraph aws["AWS account"]
-    s3[("S3<br/>Ansible bundle")]
-    ssm[("SSM Parameter Store<br/>root password")]
-    subgraph vpc["VPC 10.200.0.0/16 · security group with no ingress"]
-      subgraph l1["EC2 r8i.4xlarge Spot · nested virtualization · Proxmox VE 9 (L1)"]
-        sw["vmbr1: VLAN-aware bridge = the lab switch<br/>10 mgmt · 20 corosync · 30 ceph · 40 k8s · 50 services"]
-        qn["corosync-qnetd<br/>(tie-break vote)"]
-        cache["apt-cacher-ng"]
-        subgraph cl["Proxmox cluster 'lab16' (L2 VMs)"]
-          n1["pve01"] --- n2["pve02"] --- dots["…"] --- n16["pve16"]
-        end
-        sw --- cl
-      end
+flowchart LR
+  you["💻 You"] -- "secure AWS login<br/>(no open ports)" --> host
+  subgraph host["One AWS server (Spot, ~$0.36/hour)"]
+    subgraph cluster["16-node Proxmox cluster"]
+      n1["pve01"] --- n2["pve02"] --- dots["···"] --- n16["pve16"]
     end
   end
-  l1 -. boot: fetch bundle, password .-> s3 & ssm
 ```
 
-## What this demonstrates
+## How it works
 
-| Area | Implementation |
+1. **Packer** builds a disk image with Proxmox already installed (done once).
+2. **Terraform** starts the AWS server from that image (one command).
+3. **Ansible** runs on the server and builds the 16-node cluster (~30–40 min, no input needed).
+4. You open the Proxmox web UI in your browser and use the cluster.
+5. One command deletes everything. If you forget, the server deletes itself after 4 hours.
+
+## Why it's built this way
+
+- **Cheap:** you pay only while it runs. One session costs at most about $1.60.
+- **Safe:** nothing on the internet can reach it. Access is through AWS's own login (SSM).
+- **Repeatable:** everything is code, so the whole lab can be rebuilt from this repo at any time.
+
+## Status
+
+| Step | Status |
 |---|---|
-| Immutable images | Packer bakes Debian 13 + Proxmox VE 9 into an AMI. The same install script is reused for the nested nodes. |
-| Infrastructure as code | Terraform: VPC, IAM (least privilege), launch template with `nested_virtualization`, Spot, budget guardrail |
-| Configuration management | Ansible runs **on the instance at boot**, so there is no Windows/WSL control node and no SSH from outside |
-| Cluster design | 16 nodes, a dedicated corosync VLAN (link0) with mgmt as fallback (link1), and a QDevice so an 8/8 split keeps quorum |
-| Storage | ZFS on EBS (ARC capped) for node disks. Optional Ceph: 5 MON, 3 MGR, 16 OSD, 3/2 replication |
-| Security | No inbound rules, SSM-only access, IMDSv2 with hop limit 1 plus a forward-drop rule so nested guests can't steal the instance role, encrypted EBS, password in SSM |
-| Cost / FinOps | Spot instances, a TTL self-terminate that can't be skipped, everything `force_destroy`-able, optional AWS Budget |
+| Disk image builds and Proxmox boots on AWS | ✅ Verified (Nov 2026) |
+| Full 16-node cluster comes up | ⏳ First run pending |
 
-## Cost
+## Quick start (Windows)
 
-| Item | While running | While destroyed |
-|---|---|---|
-| r8i.4xlarge | roughly $1.1/h on-demand, typically far less on Spot. **Check current prices for your region.** | $0 |
-| EBS 280 GB gp3 | ≈ $0.03/h | $0 (deleted on termination) |
-| Public IPv4 | $0.005/h | $0 |
-| AMI snapshot (~6 GB) | – | ≈ $0.30/month |
-
-A 4-hour session costs a few dollars. Monthly cost scales with hours used, and
-the TTL guarantees an upper bound per launch.
-
-## Prerequisites (Windows)
-
-- Terraform ≥ 1.6, Packer ≥ 1.10, AWS CLI v2, and the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
-- AWS credentials for an account with a default VPC (used only by the Packer build)
-
-## Usage
+**You need:** Terraform, Packer, AWS CLI v2, the
+[Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html),
+and an AWS account.
 
 ```powershell
-# 1. Bake the AMI (once; ~25 min on a t3.medium, a few cents)
-cd packer;  packer init .;  packer build .;  cd ..
+# 1. Build the image (once, ~25 min, a few cents)
+cd packer; packer init .; packer build .; cd ..
 
-# 2. Bring the lab up
+# 2. Start the lab
 copy terraform\terraform.tfvars.example terraform\terraform.tfvars
 terraform -chdir=terraform init
 terraform -chdir=terraform apply
 
-# 3. Watch the build, then open the UI
-.\scripts\lab.ps1 status      # wait for "BOOTSTRAP COMPLETE"
-.\scripts\lab.ps1 password
-.\scripts\lab.ps1 gui         # https://localhost:8006 -> root / Linux PAM
+# 3. Use it
+.\scripts\lab.ps1 status     # wait for "BOOTSTRAP COMPLETE"
+.\scripts\lab.ps1 password   # get the login password
+.\scripts\lab.ps1 gui        # then open https://localhost:8006 (user: root)
 
-# 4. Done for the day (or let the TTL do it)
+# 4. Delete everything
 terraform -chdir=terraform destroy
 ```
 
-If the TTL terminated the instance, the next `apply` recreates it. Run
-`destroy` anyway to remove the VPC, bucket and parameter.
+## Cost
 
-## Layout
+| | |
+|---|---|
+| While running | ~$0.40/hour (Spot price + disks) |
+| One session (max 4 hours) | ~$1.60 at most |
+| When deleted | ~$0.30/month (stored disk image) |
 
-```
-packer/      AMI: Debian 13 -> Proxmox VE 9 + bootstrap tools
-terraform/   AWS: VPC, IAM, S3 bundle, SSM secret, Spot launch template, budget
-ansible/     Runs on the L1 host: lab network, ZFS, nested nodes, cluster, QDevice, Ceph
-  files/pve-install.sh   one Proxmox installer shared by Packer and Ansible
-scripts/     lab.ps1: status / gui / shell / password via SSM
-docs/        architecture.md: design, decisions, limits, roadmap
-```
+## What's in the repo
 
-See [docs/architecture.md](docs/architecture.md) for the design decisions and known limitations.
+| Folder | What it does |
+|---|---|
+| `packer/` | Builds the Proxmox disk image |
+| `terraform/` | Creates the AWS network, permissions and server |
+| `ansible/` | Builds the 16-node cluster on the server |
+| `scripts/` | `lab.ps1`: check progress, open the web UI, get the password |
+| `docs/` | Design details, trade-offs and roadmap |
+
+## Want the technical details?
+
+[docs/architecture.md](docs/architecture.md) covers the network layout (VLANs),
+cluster voting (quorum and QDevice), storage (ZFS, optional Ceph), the security
+design, and known limitations.
+
+**Coming next:** Kubernetes on the cluster, GitOps with Argo CD, backups, and CI checks.
