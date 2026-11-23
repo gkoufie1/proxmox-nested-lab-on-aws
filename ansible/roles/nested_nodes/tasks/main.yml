@@ -6,6 +6,12 @@
 #   net2  VLAN 30  ceph      ens20   10.10.30.(10+n)
 #   net3  trunk 40,50        ens21   bridged to guests inside the node
 
+- name: Create the import directory (a fresh Proxmox install doesn't have it)
+  ansible.builtin.file:
+    path: "{{ debian_image_path | dirname }}"
+    state: directory
+    mode: "0755"
+
 - name: Download the Debian 13 cloud image
   ansible.builtin.get_url:
     url: "{{ debian_image_url }}"

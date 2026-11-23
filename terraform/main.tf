@@ -6,6 +6,12 @@ data "aws_ami" "l1" {
     name   = "name"
     values = ["proxmox-ve9-l1-*"]
   }
+
+  # An interrupted Packer build can leave a newer image in state "failed"
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
 }
 
 data "aws_ec2_instance_type" "l1" {
