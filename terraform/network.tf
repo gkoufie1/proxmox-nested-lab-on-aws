@@ -11,8 +11,11 @@ data "aws_ec2_instance_type_offerings" "l1" {
   }
 }
 
+# One subnet per AZ that offers the instance type; the EC2 Fleet in main.tf
+# launches into whichever has capacity. Spot capacity for large types moves
+# between AZs minute to minute, so pinning one AZ is unreliable.
 locals {
-  az = coalesce(var.availability_zone, sort(data.aws_ec2_instance_type_offerings.l1.locations)[0])
+  azs = var.availability_zone != null ? [var.availability_zone] : sort(data.aws_ec2_instance_type_offerings.l1.locations)
 }
 
 resource "aws_vpc" "lab" {
@@ -29,12 +32,14 @@ resource "aws_internet_gateway" "lab" {
 }
 
 resource "aws_subnet" "public" {
+  for_each = toset(local.azs)
+
   vpc_id                  = aws_vpc.lab.id
-  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)
-  availability_zone       = local.az
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 10 + index(local.azs, each.key))
+  availability_zone       = each.key
   map_public_ip_on_launch = true
 
-  tags = { Name = "${var.project}-public-${local.az}" }
+  tags = { Name = "${var.project}-public-${each.key}" }
 }
 
 resource "aws_route_table" "public" {
@@ -49,7 +54,9 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
+  for_each = aws_subnet.public
+
+  subnet_id      = each.value.id
   route_table_id = aws_route_table.public.id
 }
 

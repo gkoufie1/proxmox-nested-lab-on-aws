@@ -10,7 +10,7 @@ variable "region" {
 }
 
 variable "availability_zone" {
-  description = "AZ for the lab. Null picks the first AZ that offers instance_type."
+  description = "Pin the lab to one AZ. Null (recommended) lets the fleet pick any AZ that offers instance_type and has capacity."
   type        = string
   default     = null
 }
@@ -35,9 +35,9 @@ variable "instance_type" {
 }
 
 variable "use_spot" {
-  description = "One-time Spot instance. Much cheaper; AWS may reclaim it with 2 minutes' notice."
+  description = "Use Spot (~3x cheaper, reclaimable). Off by default: on 2026-11-23 AWS had no Spot capacity with nested virtualization in any us-east-1 AZ."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "ttl_hours" {

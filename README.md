@@ -11,7 +11,7 @@ servers inside it, joined into a cluster.
 ```mermaid
 flowchart LR
   you["💻 You"] -- "secure AWS login<br/>(no open ports)" --> host
-  subgraph host["One AWS server (Spot, ~$0.36/hour)"]
+  subgraph host["One AWS server (~$1.15/hour)"]
     subgraph cluster["16-node Proxmox cluster"]
       n1["pve01"] --- n2["pve02"] --- dots["···"] --- n16["pve16"]
     end
@@ -28,7 +28,7 @@ flowchart LR
 
 ## Why it's built this way
 
-- **Cheap:** you pay only while it runs. One session costs at most about $1.60.
+- **Cost-capped:** you pay only while it runs. One session costs at most about $4.60 (4-hour cap).
 - **Safe:** nothing on the internet can reach it. Access is through AWS's own login (SSM).
 - **Repeatable:** everything is code, so the whole lab can be rebuilt from this repo at any time.
 
@@ -67,8 +67,8 @@ terraform -chdir=terraform destroy
 
 | | |
 |---|---|
-| While running | ~$0.40/hour (Spot price + disks) |
-| One session (max 4 hours) | ~$1.60 at most |
+| While running | ~$1.15/hour (on-demand r8i.4xlarge + disks) |
+| One session (max 4 hours) | ~$4.60 at most |
 | When deleted | ~$0.30/month (stored disk image) |
 
 ## What's in the repo

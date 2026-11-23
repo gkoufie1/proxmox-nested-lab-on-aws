@@ -132,16 +132,8 @@ resource "aws_launch_template" "l1" {
     http_put_response_hop_limit = 1
   }
 
-  dynamic "instance_market_options" {
-    for_each = var.use_spot ? [1] : []
-    content {
-      market_type = "spot"
-      spot_options {
-        spot_instance_type             = "one-time"
-        instance_interruption_behavior = "terminate"
-      }
-    }
-  }
+  # Spot vs on-demand is chosen by the fleet below; EC2 Fleet rejects launch
+  # templates that set instance_market_options.
 
   block_device_mappings {
     device_name = data.aws_ami.l1.root_device_name
@@ -193,12 +185,45 @@ resource "aws_launch_template" "l1" {
   }
 }
 
-resource "aws_instance" "l1" {
-  subnet_id = aws_subnet.public.id
+# A one-shot ("instant") EC2 Fleet: one instance in whichever AZ has capacity,
+# cheapest first. Nothing relaunches it after the TTL terminates it; run
+# `terraform destroy` (or `apply -replace=aws_ec2_fleet.l1`) to start fresh.
+resource "aws_ec2_fleet" "l1" {
+  type                = "instant"
+  terminate_instances = true
 
-  launch_template {
-    id      = aws_launch_template.l1.id
-    version = aws_launch_template.l1.latest_version
+  launch_template_config {
+    launch_template_specification {
+      launch_template_id = aws_launch_template.l1.id
+      version            = aws_launch_template.l1.latest_version
+    }
+
+    dynamic "override" {
+      for_each = aws_subnet.public
+      content {
+        subnet_id = override.value.id
+      }
+    }
+  }
+
+  target_capacity_specification {
+    default_target_capacity_type = var.use_spot ? "spot" : "on-demand"
+    total_target_capacity        = 1
+  }
+
+  # single_instance_type: every override is the same type, and the provider
+  # always sends a min target capacity, which AWS only accepts with this set.
+  spot_options {
+    allocation_strategy            = "price-capacity-optimized"
+    instance_interruption_behavior = "terminate"
+    single_instance_type           = true
+    min_target_capacity            = 1
+  }
+
+  on_demand_options {
+    allocation_strategy  = "lowestPrice"
+    single_instance_type = true
+    min_target_capacity  = 1
   }
 
   lifecycle {
@@ -206,7 +231,15 @@ resource "aws_instance" "l1" {
       condition     = local.lab_memory_mb <= data.aws_ec2_instance_type.l1.memory_size
       error_message = "${var.node_count} nodes x ${var.node_memory_mb} MiB (+12 GiB host overhead) = ${local.lab_memory_mb} MiB exceeds ${var.instance_type}'s ${data.aws_ec2_instance_type.l1.memory_size} MiB. Lower node_count/node_memory_mb or pick a bigger type."
     }
+    postcondition {
+      condition     = length(flatten(self.fleet_instance_set[*].instance_ids)) == 1
+      error_message = "The fleet launched no instance: no ${var.instance_type} capacity in any of ${join(", ", local.azs)}. Try again later, or set use_spot = false."
+    }
   }
 
   depends_on = [aws_iam_role_policy.bootstrap, aws_route_table_association.public]
+}
+
+locals {
+  instance_id = one(flatten(aws_ec2_fleet.l1.fleet_instance_set[*].instance_ids))
 }

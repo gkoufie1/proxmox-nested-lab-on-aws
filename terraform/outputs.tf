@@ -1,13 +1,14 @@
 output "instance_id" {
-  value = aws_instance.l1.id
+  value = local.instance_id
 }
 
 output "region" {
   value = var.region
 }
 
-output "availability_zone" {
-  value = local.az
+output "candidate_availability_zones" {
+  description = "AZs the fleet could launch into."
+  value       = local.azs
 }
 
 output "pve01_ip" {

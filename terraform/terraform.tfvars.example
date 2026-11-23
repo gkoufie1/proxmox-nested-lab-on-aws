@@ -2,7 +2,7 @@
 
 region        = "us-east-1"
 instance_type = "r8i.4xlarge" # 16 vCPU / 128 GiB
-use_spot      = true
+use_spot      = false # Spot + nested virtualization unavailable when tested
 ttl_hours     = 4
 
 node_count     = 16
