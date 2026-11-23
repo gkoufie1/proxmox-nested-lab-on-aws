@@ -61,7 +61,7 @@ the TTL guarantees an upper bound per launch.
 ## Usage
 
 ```powershell
-# 1. Bake the AMI (once; ~15 min on a t3.medium, a few cents)
+# 1. Bake the AMI (once; ~25 min on a t3.medium, a few cents)
 cd packer;  packer init .;  packer build .;  cd ..
 
 # 2. Bring the lab up

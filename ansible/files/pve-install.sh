@@ -29,6 +29,12 @@ esac
 
 case "${PHASE}" in
   kernel)
+    # The Proxmox kernel pulls in Proxmox's grub-pc, whose postinst stops to ask
+    # which disk to install to. Answer it up front: the disk holding /.
+    root_disk="/dev/$(lsblk -no PKNAME "$(findmnt -no SOURCE /)")"
+    echo "grub-pc grub-pc/install_devices multiselect ${root_disk}" | debconf-set-selections
+    echo "grub-pc grub-pc/install_devices_empty boolean false" | debconf-set-selections
+
     apt-get update
     apt-get install "${APT_OPTS[@]}" ca-certificates curl
     curl -fsSL -o /usr/share/keyrings/proxmox-archive-keyring.gpg \

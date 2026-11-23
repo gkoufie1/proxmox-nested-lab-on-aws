@@ -70,8 +70,10 @@ drifts when it fires; the next `apply` reconciles it.
 
 These parts are written but haven't been run end to end yet. Check them in this order:
 
-1. **Proxmox kernel on EC2.** The Packer build fails at the reboot step if the
-   Proxmox kernel lacks a needed ENA/NVMe driver. Debug with the EC2 serial console.
+1. ~~**Proxmox kernel on EC2.**~~ **Verified 2026-11-23:** the AMI build boots
+   Proxmox kernel 7.0.14-pve on Nitro (t3) and installs PVE 9.2.32. The first
+   attempt failed only because Proxmox's `grub-pc` asked for an install disk;
+   `pve-install.sh` now preseeds it.
 2. **Nested virtualization at launch.** `terraform validate` accepts
    `cpu_options.nested_virtualization` (AWS provider 6.69.1). Whether EC2
    accepts it alongside Spot is only proven by the first `apply`; the
