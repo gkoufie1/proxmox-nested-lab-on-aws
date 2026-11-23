@@ -1,0 +1,121 @@
+# --- Root access: password from SSM, SSH key for the nested nodes ---------
+
+- name: Read the lab root password from SSM
+  ansible.builtin.command: >-
+    aws ssm get-parameter --name {{ root_password_param }} --with-decryption
+    --query Parameter.Value --output text --region {{ aws_region }}
+  register: root_password
+  changed_when: false
+  no_log: true
+
+- name: Remember the password for the nested nodes
+  ansible.builtin.set_fact:
+    lab_root_password: "{{ root_password.stdout }}"
+  no_log: true
+
+- name: Set the L1 root password (Proxmox UI on the L1 host)
+  ansible.builtin.shell: echo 'root:{{ lab_root_password }}' | chpasswd
+  changed_when: false
+  no_log: true
+
+- name: SSH key the L1 host uses to reach the nested nodes
+  ansible.builtin.command: ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519
+  args:
+    creates: /root/.ssh/id_ed25519
+
+# --- Nested virtualization -------------------------------------------------
+
+- name: Check that EC2 exposes VT-x to this instance
+  ansible.builtin.command: grep -cw vmx /proc/cpuinfo
+  register: vmx
+  changed_when: false
+  failed_when: vmx.stdout | int == 0
+
+# --- Lab network -------------------------------------------------------------
+
+- name: Enable IPv4 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_file: /etc/sysctl.d/90-lab.conf
+
+- name: Make /etc/network/interfaces include interfaces.d
+  ansible.builtin.lineinfile:
+    path: /etc/network/interfaces
+    line: source /etc/network/interfaces.d/*
+    create: true
+    mode: "0644"
+
+- name: Write the lab bridge and VLAN gateways
+  ansible.builtin.template:
+    src: lab-network.cfg.j2
+    dest: /etc/network/interfaces.d/lab.cfg
+    mode: "0644"
+  vars:
+    uplink: "{{ ansible_default_ipv4.interface }}"
+  register: lab_net
+
+- name: Apply network changes
+  ansible.builtin.command: ifreload -a
+  when: lab_net.changed
+
+# --- ZFS pool on the EBS data volume ----------------------------------------
+
+- name: Check for the tank pool
+  ansible.builtin.command: zpool list -H tank
+  register: tank
+  failed_when: false
+  changed_when: false
+
+- name: Create the tank pool
+  when: tank.rc != 0
+  block:
+    - name: Find the empty EBS data volume
+      ansible.builtin.shell: |
+        set -o pipefail
+        root_disk=$(lsblk -no PKNAME "$(findmnt -no SOURCE /)")
+        lsblk -dnpo NAME,TYPE | awk '$2 == "disk" {print $1}' | while read -r d; do
+          [ "$d" = "/dev/${root_disk}" ] && continue
+          [ "$(lsblk -no NAME "$d" | wc -l)" -eq 1 ] && echo "$d"
+        done | head -n1
+      args:
+        executable: /bin/bash
+      register: data_disk
+      changed_when: false
+      failed_when: data_disk.stdout == ""
+
+    - name: Create the pool
+      ansible.builtin.command: >-
+        zpool create -f -o ashift=12 -O compression=lz4 -O atime=off
+        tank {{ data_disk.stdout }}
+
+- name: Cap the ZFS ARC at 4 GiB (persistent)
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/zfs.conf
+    content: "options zfs zfs_arc_max={{ 4 * 1024 ** 3 }}\n"
+    mode: "0644"
+
+- name: Cap the ZFS ARC at 4 GiB (now)
+  ansible.builtin.shell: echo {{ 4 * 1024 ** 3 }} > /sys/module/zfs/parameters/zfs_arc_max
+  changed_when: false
+
+- name: Check whether tank is registered with Proxmox
+  ansible.builtin.command: "grep -q '^zfspool: tank$' /etc/pve/storage.cfg"
+  register: tank_storage
+  failed_when: false
+  changed_when: false
+
+- name: Register tank as Proxmox storage
+  ansible.builtin.command: pvesm add zfspool tank --pool tank --content images,rootdir --sparse 1
+  when: tank_storage.rc != 0
+
+# --- Services the nested nodes use -----------------------------------------
+
+- name: Start the apt cache and the QDevice daemon
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - apt-cacher-ng
+    - corosync-qnetd

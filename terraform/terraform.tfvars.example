@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars (git-ignored) and adjust.
+
+region        = "us-east-1"
+instance_type = "r8i.4xlarge" # 16 vCPU / 128 GiB
+use_spot      = true
+ttl_hours     = 4
+
+node_count     = 16
+node_memory_mb = 6144
+enable_qdevice = true
+enable_ceph    = false
+
+# Smaller and cheaper: 8 nodes on an m8i.4xlarge (64 GiB)
+# instance_type  = "m8i.4xlarge"
+# node_count     = 8
+# node_memory_mb = 4096
+
+# create_budget = true
+# budget_email  = "you@example.com"

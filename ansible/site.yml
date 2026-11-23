@@ -1,0 +1,45 @@
+# Builds the nested Proxmox cluster. Runs on the L1 host at boot
+# (terraform/user_data.sh.tftpl); safe to re-run by hand:
+#   cd /opt/lab/ansible && ansible-playbook site.yml -e @/opt/lab/vars.json
+
+- name: L1 host - lab network, ZFS pool, nested node VMs
+  hosts: l1
+  roles:
+    - l1_host
+    - nested_nodes
+
+- name: Nested nodes - install Proxmox VE
+  hosts: pve_nodes
+  become: true
+  gather_facts: false
+  roles:
+    - pve_node
+
+- name: Form the cluster, one node at a time
+  hosts: pve_nodes
+  become: true
+  gather_facts: false
+  serial: 1
+  roles:
+    - pve_cluster
+
+- name: QDevice on the L1 host breaks ties for an even node count
+  hosts: pve_nodes[0]
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Set up the QDevice
+      ansible.builtin.include_role:
+        name: pve_cluster
+        tasks_from: qdevice
+      when: enable_qdevice | bool and node_count | int is even
+
+- name: Ceph
+  hosts: pve_nodes
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Deploy Ceph
+      ansible.builtin.include_role:
+        name: ceph
+      when: enable_ceph | bool

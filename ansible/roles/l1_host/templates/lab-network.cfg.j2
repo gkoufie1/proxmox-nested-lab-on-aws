@@ -1,0 +1,22 @@
+# Managed by Ansible (l1_host role).
+# vmbr1 is the lab's "switch": VLAN-aware, no physical ports. The L1 host is
+# the router: .1 on every lab VLAN, NAT out of {{ uplink }}.
+
+auto vmbr1
+iface vmbr1 inet manual
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0
+    bridge-vlan-aware yes
+    bridge-vids 2-4094
+    post-up   iptables -t nat -A POSTROUTING -s {{ lab_supernet }} -o {{ uplink }} -j MASQUERADE
+    post-up   iptables -I FORWARD -s {{ lab_supernet }} -d 169.254.169.254 -j DROP
+    post-down iptables -t nat -D POSTROUTING -s {{ lab_supernet }} -o {{ uplink }} -j MASQUERADE
+    post-down iptables -D FORWARD -s {{ lab_supernet }} -d 169.254.169.254 -j DROP
+{% for name, vlan in lab_vlans.items() %}
+
+# {{ name }}
+auto vmbr1.{{ vlan.id }}
+iface vmbr1.{{ vlan.id }} inet static
+    address {{ vlan.prefix }}.1/24
+{% endfor %}

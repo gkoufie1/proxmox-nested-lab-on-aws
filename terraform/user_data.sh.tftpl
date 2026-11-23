@@ -1,0 +1,25 @@
+#!/bin/bash
+# Rendered by Terraform. Runs once, as root, on first boot of the L1 host.
+# bundle md5: ${bundle_md5} (a new bundle means a new instance)
+set -euo pipefail
+exec > >(tee -a /var/log/lab-bootstrap.log) 2>&1
+
+# Cost guardrail first, before anything can fail: power off -> terminate.
+shutdown -h +${ttl_minutes} "Lab TTL reached, terminating"
+
+mkdir -p /opt/lab
+cd /opt/lab
+trap 'echo "BOOTSTRAP FAILED (line $LINENO)"; touch /opt/lab/FAILED' ERR
+
+aws s3 cp "s3://${bucket}/${bundle_key}" bundle.zip --region "${region}"
+rm -rf ansible && unzip -q bundle.zip -d ansible
+
+cat > vars.json <<'JSON'
+${vars_json}
+JSON
+
+cd ansible
+ansible-playbook site.yml -e @/opt/lab/vars.json
+
+touch /opt/lab/READY
+echo "BOOTSTRAP COMPLETE"

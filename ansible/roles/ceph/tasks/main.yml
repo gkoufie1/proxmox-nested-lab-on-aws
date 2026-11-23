@@ -1,0 +1,60 @@
+# Hyper-converged Ceph across the nested nodes: 5 monitors, 3 managers,
+# one OSD (scsi1 -> /dev/sdb) per node, a 3-copy RBD pool for VM disks.
+# Runs on all nodes; cluster-wide steps are run_once on the first node.
+
+- name: Install Ceph packages
+  ansible.builtin.shell: yes | pveceph install --repository no-subscription
+  args:
+    creates: /usr/bin/ceph-osd
+
+- name: Initialise the Ceph config on the Ceph VLAN
+  ansible.builtin.command: pveceph init --network {{ lab_vlans.ceph.prefix }}.0/24
+  args:
+    creates: /etc/pve/ceph.conf
+  run_once: true
+  delegate_to: "{{ first_node }}"
+
+- name: Monitors on the first five nodes
+  ansible.builtin.command: pveceph mon create
+  args:
+    creates: /var/lib/ceph/mon/ceph-{{ inventory_hostname }}
+  when: node_index | int <= 5
+  throttle: 1
+
+- name: Managers on the first three nodes
+  ansible.builtin.command: pveceph mgr create
+  args:
+    creates: /var/lib/ceph/mgr/ceph-{{ inventory_hostname }}
+  when: node_index | int <= 3
+  throttle: 1
+
+- name: Shrink the OSD memory target to fit 6 GiB nodes
+  ansible.builtin.command: ceph config set osd osd_memory_target 1073741824
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ first_node }}"
+
+- name: Does /dev/sdb already hold an OSD?
+  ansible.builtin.command: ceph-volume lvm list /dev/sdb
+  register: osd_list
+  failed_when: false
+  changed_when: false
+
+- name: Create the OSD
+  ansible.builtin.command: pveceph osd create /dev/sdb
+  when: osd_list.rc != 0
+  throttle: 4
+
+- name: Does the VM pool exist?
+  ansible.builtin.shell: ceph osd pool ls | grep -qx vm-pool
+  register: pool
+  failed_when: false
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ first_node }}"
+
+- name: Create the VM pool and add it as Proxmox storage
+  ansible.builtin.command: pveceph pool create vm-pool --size 3 --min_size 2 --add_storages 1
+  when: pool.rc != 0
+  run_once: true
+  delegate_to: "{{ first_node }}"

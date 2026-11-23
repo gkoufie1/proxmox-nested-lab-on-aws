@@ -1,0 +1,41 @@
+# Defaults. At boot, /opt/lab/vars.json (rendered by Terraform) overrides
+# node_count, node_cores, node_memory_mb, cluster_name, enable_*, aws_region,
+# root_password_param and vpc_dns.
+node_count: 16
+node_cores: 2
+node_memory_mb: 6144
+cluster_name: lab16
+enable_qdevice: true
+enable_ceph: false
+aws_region: us-east-1
+root_password_param: /proxmox-lab/root-password
+vpc_dns: 10.200.0.2
+
+lab_domain: lab.internal
+
+# Nested VLANs live on vmbr1, a VLAN-aware bridge on the L1 host that plays the
+# top-of-rack switch. The L1 host owns .1 on each and NATs 10.10.0.0/16 out.
+lab_supernet: 10.10.0.0/16
+lab_vlans:
+  mgmt:     { id: 10, prefix: "10.10.10" }   # Proxmox UI/API, SSH, default route
+  corosync: { id: 20, prefix: "10.10.20" }   # cluster heartbeat (link0)
+  ceph:     { id: 30, prefix: "10.10.30" }   # Ceph public + cluster
+  k8s:      { id: 40, prefix: "10.10.40" }   # guest VLAN, trunked to nodes
+  services: { id: 50, prefix: "10.10.50" }   # guest VLAN, trunked to nodes
+l1_mgmt_ip: "{{ lab_vlans.mgmt.prefix }}.1"
+
+# Nested Proxmox nodes: pve01 = VMID 101 = 10.10.{10,20,30}.11
+template_vmid: 9000
+vmid_base: 100
+ip_offset: 10
+node_disk_gb: 32
+osd_disk_gb: 32
+debian_image_url: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2
+debian_image_path: /var/lib/vz/import/debian-13-genericcloud-amd64.qcow2
+
+# Per-node addresses (node_index is set by add_host)
+node_name: "pve{{ '%02d' % (node_index | int) }}"
+node_mgmt_ip: "{{ lab_vlans.mgmt.prefix }}.{{ ip_offset + node_index | int }}"
+node_corosync_ip: "{{ lab_vlans.corosync.prefix }}.{{ ip_offset + node_index | int }}"
+first_node: "{{ groups['pve_nodes'][0] }}"
+first_node_mgmt_ip: "{{ lab_vlans.mgmt.prefix }}.{{ ip_offset + 1 }}"

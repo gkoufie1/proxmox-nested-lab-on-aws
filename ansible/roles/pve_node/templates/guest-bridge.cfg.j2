@@ -1,0 +1,8 @@
+# Managed by Ansible. Guest bridge on the trunk NIC (VLANs {{ lab_vlans.k8s.id }}, {{ lab_vlans.services.id }}).
+auto vmbr0
+iface vmbr0 inet manual
+    bridge-ports ens21
+    bridge-stp off
+    bridge-fd 0
+    bridge-vlan-aware yes
+    bridge-vids {{ lab_vlans.k8s.id }} {{ lab_vlans.services.id }}

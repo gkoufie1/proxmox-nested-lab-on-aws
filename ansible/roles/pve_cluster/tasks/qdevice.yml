@@ -1,0 +1,37 @@
+# With 16 votes an 8/8 split leaves neither half quorate. corosync-qnetd on
+# the L1 host (outside the cluster) adds the tie-breaking vote.
+# Runs on the first node only.
+
+- name: Is a QDevice already configured?
+  ansible.builtin.command: pvecm status
+  register: qdevice_status
+  changed_when: false
+
+- name: Set up the QDevice
+  when: "'Qdevice' not in qdevice_status.stdout"
+  block:
+    - name: Read the first node's root public key
+      ansible.builtin.slurp:
+        src: /root/.ssh/id_ed25519.pub
+      register: first_pubkey
+
+    - name: Let the first node SSH to the L1 host as root
+      ansible.posix.authorized_key:
+        user: root
+        key: "{{ first_pubkey.content | b64decode }}"
+      delegate_to: localhost
+
+    - name: Trust the L1 host key
+      ansible.builtin.shell: ssh-keyscan -t ed25519 {{ l1_mgmt_ip }} >> /root/.ssh/known_hosts
+
+    - name: Point the cluster at qnetd on the L1 host
+      ansible.builtin.command: pvecm qdevice setup {{ l1_mgmt_ip }} -f
+
+- name: Show the vote count
+  ansible.builtin.command: pvecm status
+  register: final_status
+  changed_when: false
+
+- name: Cluster status
+  ansible.builtin.debug:
+    msg: "{{ final_status.stdout_lines | select('search', 'Expected votes|Total votes|Quorum|Qdevice|Flags') | list }}"

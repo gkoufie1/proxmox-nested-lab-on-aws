@@ -1,0 +1,98 @@
+# Creates the nested Proxmox nodes as VMs on the L1 host: Debian 13 cloud
+# image -> template -> linked clones, addressed by cloud-init.
+#
+#   net0  VLAN 10  mgmt      ens18   10.10.10.(10+n)  default route
+#   net1  VLAN 20  corosync  ens19   10.10.20.(10+n)
+#   net2  VLAN 30  ceph      ens20   10.10.30.(10+n)
+#   net3  trunk 40,50        ens21   bridged to guests inside the node
+
+- name: Download the Debian 13 cloud image
+  ansible.builtin.get_url:
+    url: "{{ debian_image_url }}"
+    dest: "{{ debian_image_path }}"
+    mode: "0644"
+
+- name: Check for the node template
+  ansible.builtin.command: qm status {{ template_vmid }}
+  register: template_status
+  failed_when: false
+  changed_when: false
+
+- name: Build the node template
+  when: template_status.rc != 0
+  ansible.builtin.shell: |
+    set -euo pipefail
+    qm create {{ template_vmid }} --name pve-node-template --ostype l26 \
+      --cpu host --cores {{ node_cores }} --memory {{ node_memory_mb }} --balloon 0 \
+      --scsihw virtio-scsi-single --serial0 socket --vga serial0 \
+      --net0 virtio,bridge=vmbr1,tag={{ lab_vlans.mgmt.id }}
+    qm set {{ template_vmid }} --scsi0 tank:0,import-from={{ debian_image_path }},discard=on,iothread=1
+    qm set {{ template_vmid }} --ide2 tank:cloudinit --boot order=scsi0
+    qm template {{ template_vmid }}
+  args:
+    executable: /bin/bash
+
+- name: Create the nested nodes
+  ansible.builtin.shell: |
+    set -euo pipefail
+    vmid={{ vmid_base + i }}
+    if qm status "$vmid" >/dev/null 2>&1; then echo exists; exit 0; fi
+    qm clone {{ template_vmid }} "$vmid" --name {{ vm_name }} --full 0
+    qm set "$vmid" \
+      --cores {{ node_cores }} --memory {{ node_memory_mb }} \
+      --net1 virtio,bridge=vmbr1,tag={{ lab_vlans.corosync.id }} \
+      --net2 virtio,bridge=vmbr1,tag={{ lab_vlans.ceph.id }} \
+      --net3 'virtio,bridge=vmbr1,trunks={{ lab_vlans.k8s.id }};{{ lab_vlans.services.id }}' \
+      --ciuser debian --sshkeys /root/.ssh/id_ed25519.pub --ciupgrade 0 \
+      --ipconfig0 ip={{ lab_vlans.mgmt.prefix }}.{{ vm_host }}/24,gw={{ l1_mgmt_ip }} \
+      --ipconfig1 ip={{ lab_vlans.corosync.prefix }}.{{ vm_host }}/24 \
+      --ipconfig2 ip={{ lab_vlans.ceph.prefix }}.{{ vm_host }}/24 \
+      --nameserver {{ vpc_dns }} --searchdomain {{ lab_domain }}
+    qm resize "$vmid" scsi0 {{ node_disk_gb }}G
+    {% if enable_ceph | bool %}
+    qm set "$vmid" --scsi1 tank:{{ osd_disk_gb }},discard=on,iothread=1
+    {% endif %}
+    qm start "$vmid"
+    echo created
+  args:
+    executable: /bin/bash
+  vars:
+    vm_name: "pve{{ '%02d' % i }}"
+    vm_host: "{{ ip_offset + i }}"
+  loop: "{{ range(1, node_count | int + 1) | list }}"
+  loop_control:
+    loop_var: i
+    label: "{{ vm_name }}"
+  register: created
+  changed_when: "'created' in created.stdout"
+
+- name: Make sure every node is running
+  ansible.builtin.command: qm start {{ vmid_base + i }}
+  register: started
+  failed_when: started.rc != 0 and 'already running' not in started.stderr
+  changed_when: started.rc == 0
+  loop: "{{ range(1, node_count | int + 1) | list }}"
+  loop_control:
+    loop_var: i
+
+- name: Wait for SSH on every node
+  ansible.builtin.wait_for:
+    host: "{{ lab_vlans.mgmt.prefix }}.{{ ip_offset + i }}"
+    port: 22
+    timeout: 600
+  loop: "{{ range(1, node_count | int + 1) | list }}"
+  loop_control:
+    loop_var: i
+
+- name: Add the nodes to the in-memory inventory
+  ansible.builtin.add_host:
+    name: "pve{{ '%02d' % i }}"
+    groups: pve_nodes
+    ansible_host: "{{ lab_vlans.mgmt.prefix }}.{{ ip_offset + i }}"
+    ansible_user: debian
+    ansible_ssh_private_key_file: /root/.ssh/id_ed25519
+    node_index: "{{ i }}"
+  loop: "{{ range(1, node_count | int + 1) | list }}"
+  loop_control:
+    loop_var: i
+  changed_when: false

@@ -1,0 +1,8 @@
+# Managed by Ansible. Every cluster member resolves without DNS.
+127.0.0.1 localhost
+::1 localhost ip6-localhost ip6-loopback
+
+{{ l1_mgmt_ip }} pve-l1.{{ lab_domain }} pve-l1
+{% for n in range(1, node_count | int + 1) %}
+{{ lab_vlans.mgmt.prefix }}.{{ ip_offset + n }} pve{{ '%02d' % n }}.{{ lab_domain }} pve{{ '%02d' % n }}
+{% endfor %}

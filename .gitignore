@@ -1,0 +1,15 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+terraform/.build/
+
+# Packer
+packer_cache/
+packer/manifest.json
+
+# Ansible
+*.retry

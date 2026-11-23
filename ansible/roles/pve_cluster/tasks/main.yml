@@ -1,0 +1,31 @@
+# Runs with serial: 1 - Proxmox joins must happen one node at a time.
+# Corosync link0 is the dedicated VLAN 20; link1 (mgmt) is the fallback.
+
+- name: Already in a cluster?
+  ansible.builtin.stat:
+    path: /etc/pve/corosync.conf
+  register: corosync_conf
+
+- name: Create the cluster on the first node
+  ansible.builtin.command: >-
+    pvecm create {{ cluster_name }}
+    --link0 {{ node_corosync_ip }} --link1 {{ node_mgmt_ip }}
+  when:
+    - inventory_hostname == first_node
+    - not corosync_conf.stat.exists
+
+- name: Join the cluster
+  ansible.builtin.command: >-
+    pvecm add {{ first_node_mgmt_ip }} --use_ssh 1
+    --link0 {{ node_corosync_ip }} --link1 {{ node_mgmt_ip }}
+  when:
+    - inventory_hostname != first_node
+    - not corosync_conf.stat.exists
+
+- name: Wait until the cluster is quorate again
+  ansible.builtin.command: pvecm status
+  register: pvecm_status
+  changed_when: false
+  until: pvecm_status.stdout is search('Quorate:\s+Yes')
+  retries: 30
+  delay: 5

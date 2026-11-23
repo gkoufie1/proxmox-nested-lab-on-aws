@@ -1,0 +1,107 @@
+# Turns a fresh Debian 13 cloud VM into a Proxmox VE 9 node.
+
+- name: Wait for cloud-init's first boot to finish
+  ansible.builtin.command: cloud-init status --wait
+  register: ci
+  changed_when: false
+  failed_when: ci.rc not in [0, 2] # 2 = finished with warnings
+
+- name: Stop cloud-init rewriting /etc/hosts and the network on later boots
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud-init.disabled
+    content: ""
+    mode: "0644"
+
+- name: Resolve every node's name to its management IP (Proxmox requires it)
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    mode: "0644"
+
+- name: Send plain-HTTP apt traffic through the L1 cache
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/01proxy
+    content: 'Acquire::http::Proxy "http://{{ l1_mgmt_ip }}:3142";'
+    mode: "0644"
+
+- name: Copy the Proxmox installer
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/files/pve-install.sh"
+    dest: /usr/local/sbin/pve-install.sh
+    mode: "0755"
+
+- name: Is Proxmox VE installed?
+  ansible.builtin.stat:
+    path: /usr/bin/pveversion
+  register: pveversion
+
+- name: Install Proxmox VE
+  when: not pveversion.stat.exists
+  block:
+    - name: Proxmox repo and kernel
+      ansible.builtin.command: /usr/local/sbin/pve-install.sh kernel
+
+    - name: Boot the Proxmox kernel
+      ansible.builtin.reboot:
+        reboot_timeout: 900
+
+    - name: Proxmox VE packages
+      ansible.builtin.command: /usr/local/sbin/pve-install.sh pve
+
+- name: Guest bridge on the trunk NIC
+  ansible.builtin.template:
+    src: guest-bridge.cfg.j2
+    dest: /etc/network/interfaces.d/guest-bridge.cfg
+    mode: "0644"
+
+- name: Make /etc/network/interfaces include interfaces.d
+  ansible.builtin.lineinfile:
+    path: /etc/network/interfaces
+    line: source /etc/network/interfaces.d/*
+    create: true
+    mode: "0644"
+
+- name: QDevice client
+  ansible.builtin.apt:
+    name: corosync-qdevice
+  when: enable_qdevice | bool and node_count | int is even
+
+- name: Reboot into the finished node
+  ansible.builtin.reboot:
+    reboot_timeout: 900
+  when: not pveversion.stat.exists
+
+- name: Set the root password (Proxmox UI login, realm PAM)
+  ansible.builtin.shell: echo 'root:{{ hostvars['localhost'].lab_root_password }}' | chpasswd
+  changed_when: false
+  no_log: true
+
+# --- Root SSH between nodes, needed by `pvecm add --use_ssh` --------------
+
+- name: Root SSH key
+  ansible.builtin.command: ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519
+  args:
+    creates: /root/.ssh/id_ed25519
+
+- name: Read the root public key
+  ansible.builtin.slurp:
+    src: /root/.ssh/id_ed25519.pub
+  register: root_pubkey
+
+- name: Trust every node's key on the first node
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ root_pubkey.content | b64decode }}"
+  delegate_to: "{{ first_node }}"
+  throttle: 1
+
+- name: Trust the first node's host key
+  ansible.builtin.shell: |
+    set -o pipefail
+    grep -q '^{{ first_node_mgmt_ip }} ' /root/.ssh/known_hosts 2>/dev/null && exit 0
+    ssh-keyscan -t ed25519 {{ first_node_mgmt_ip }} >> /root/.ssh/known_hosts
+    echo added
+  args:
+    executable: /bin/bash
+  register: keyscan
+  changed_when: "'added' in keyscan.stdout"
