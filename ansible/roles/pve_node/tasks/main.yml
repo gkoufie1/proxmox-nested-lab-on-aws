@@ -18,16 +18,14 @@
     dest: /etc/hosts
     mode: "0644"
 
-# apt falls back to the http proxy for https URLs too, and apt-cacher-ng
-# refuses to tunnel them (403 CONNECT denied). Debian's cloud image uses https
-# mirrors, so send those direct; the Proxmox repo is plain http and is cached.
-- name: Send plain-HTTP apt traffic through the L1 cache
-  ansible.builtin.copy:
-    dest: /etc/apt/apt.conf.d/01proxy
-    content: |
-      Acquire::http::Proxy "http://{{ l1_mgmt_ip }}:3142";
-      Acquire::https::Proxy "DIRECT";
-    mode: "0644"
+# No apt proxy. Routing the nodes through apt-cacher-ng on the L1 host was
+# tried and dropped: with 16 nodes it served ~70 KB/s, while each node pulls
+# from download.proxmox.com directly at tens of MB/s, and EC2 inbound data
+# is free. (It also refuses https, which Debian's mirrors use.)
+- name: Download packages directly, not through a proxy
+  ansible.builtin.file:
+    path: /etc/apt/apt.conf.d/01proxy
+    state: absent
 
 - name: Copy the Proxmox installer
   ansible.builtin.copy:
