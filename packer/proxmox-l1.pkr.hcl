@@ -42,6 +42,10 @@ source "amazon-ebs" "proxmox_l1" {
   # Don't ship Packer's temporary public key in the image
   ssh_clear_authorized_keys = true
 
+  # Store the image's snapshot encrypted at rest with the account's default
+  # EBS key (aws/ebs): no extra cost, and the AMI stays usable in this account.
+  encrypt_boot = true
+
   # Uses the default VPC; SSH is opened only to your current public IP
   associate_public_ip_address               = true
   temporary_security_group_source_public_ip = true
