@@ -37,7 +37,7 @@ flowchart LR
 | Step | Status |
 |---|---|
 | Disk image builds and Proxmox boots on AWS | ✅ Verified (Nov 2026) |
-| Full 16-node cluster comes up | ⏳ First run pending |
+| Full 16-node cluster comes up (16 nodes + QDevice, quorate) | ✅ Verified (Nov 2026) |
 
 ## Quick start (Windows)
 
