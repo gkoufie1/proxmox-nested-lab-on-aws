@@ -19,8 +19,10 @@ data "aws_ec2_instance_type" "l1" {
 }
 
 locals {
-  # Nested nodes + ~8 GiB for the L1 host itself + the 4 GiB ZFS ARC cap
-  lab_memory_mb = var.node_count * var.node_memory_mb + 12288
+  # Talos VMs on the L1 host (kubernetes/terraform defaults): 3 x 3 GiB + 3 x 4 GiB
+  k8s_memory_mb = var.enable_kubernetes ? 3 * 3072 + 3 * 4096 : 0
+  # Nested nodes + Kubernetes + ~8 GiB for the L1 host itself + the 4 GiB ZFS ARC cap
+  lab_memory_mb = var.node_count * var.node_memory_mb + local.k8s_memory_mb + 12288
 }
 
 # --- Bundle: the Ansible tree the instance runs at boot -----------------
@@ -49,6 +51,20 @@ resource "aws_s3_object" "bundle" {
   key    = "bundle.zip"
   source = data.archive_file.bundle.output_path
   etag   = data.archive_file.bundle.output_md5
+}
+
+# Phase 2 Terraform (Talos Kubernetes), run on the instance by the kubernetes role
+data "archive_file" "kubernetes" {
+  type        = "zip"
+  source_dir  = "${path.module}/../kubernetes"
+  output_path = "${path.module}/.build/kubernetes.zip"
+}
+
+resource "aws_s3_object" "kubernetes" {
+  bucket = aws_s3_bucket.bundle.id
+  key    = "kubernetes.zip"
+  source = data.archive_file.kubernetes.output_path
+  etag   = data.archive_file.kubernetes.output_md5
 }
 
 # --- Root password for the Proxmox web UI (PAM realm) -------------------
@@ -91,9 +107,12 @@ resource "aws_iam_role_policy" "bootstrap" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = "s3:GetObject"
-        Resource = "${aws_s3_bucket.bundle.arn}/${aws_s3_object.bundle.key}"
+        Effect = "Allow"
+        Action = "s3:GetObject"
+        Resource = [
+          "${aws_s3_bucket.bundle.arn}/${aws_s3_object.bundle.key}",
+          "${aws_s3_bucket.bundle.arn}/${aws_s3_object.kubernetes.key}",
+        ]
       },
       {
         Effect   = "Allow"
@@ -166,6 +185,8 @@ resource "aws_launch_template" "l1" {
     bucket      = aws_s3_bucket.bundle.id
     bundle_key  = aws_s3_object.bundle.key
     bundle_md5  = data.archive_file.bundle.output_md5
+    k8s_key     = aws_s3_object.kubernetes.key
+    k8s_md5     = data.archive_file.kubernetes.output_md5
     ttl_minutes = var.ttl_hours * 60
     vars_json = jsonencode({
       aws_region          = var.region
@@ -177,6 +198,7 @@ resource "aws_launch_template" "l1" {
       cluster_name        = var.cluster_name
       enable_qdevice      = var.enable_qdevice
       enable_ceph         = var.enable_ceph
+      enable_kubernetes   = var.enable_kubernetes
     })
   }))
 

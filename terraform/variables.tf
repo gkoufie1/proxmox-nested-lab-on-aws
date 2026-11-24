@@ -80,9 +80,9 @@ variable "node_cores" {
 }
 
 variable "node_memory_mb" {
-  description = "RAM per nested node. 4096 is enough without Ceph; use 6144 with it."
+  description = "RAM per nested node. 4096 is enough without Ceph; use 6144 with it (and enable_kubernetes = false on a 128 GiB instance)."
   type        = number
-  default     = 6144
+  default     = 4096
 }
 
 variable "cluster_name" {
@@ -100,6 +100,12 @@ variable "enable_ceph" {
   description = "Deploy Ceph (5 monitors, 3 managers, one OSD per node). Adds roughly 10 minutes."
   type        = bool
   default     = false
+}
+
+variable "enable_kubernetes" {
+  description = "Phase 2: a Talos Kubernetes cluster (3 control planes + 3 workers) on the L1 host. Adds ~21 GiB RAM and roughly 15 minutes."
+  type        = bool
+  default     = true
 }
 
 # --- Cost guardrail ------------------------------------------------------

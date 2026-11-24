@@ -1,6 +1,6 @@
 #!/bin/bash
 # Rendered by Terraform. Runs once, as root, on first boot of the L1 host.
-# bundle md5: ${bundle_md5} (a new bundle means a new instance)
+# bundle md5: ${bundle_md5}, kubernetes md5: ${k8s_md5} (a new bundle means a new instance)
 set -euo pipefail
 exec > >(tee -a /var/log/lab-bootstrap.log) 2>&1
 
@@ -13,6 +13,8 @@ trap 'echo "BOOTSTRAP FAILED (line $LINENO)"; touch /opt/lab/FAILED' ERR
 
 aws s3 cp "s3://${bucket}/${bundle_key}" bundle.zip --region "${region}"
 rm -rf ansible && unzip -q bundle.zip -d ansible
+aws s3 cp "s3://${bucket}/${k8s_key}" kubernetes.zip --region "${region}"
+rm -rf kubernetes && unzip -q kubernetes.zip -d kubernetes
 
 cat > vars.json <<'JSON'
 ${vars_json}

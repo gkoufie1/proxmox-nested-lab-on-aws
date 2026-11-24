@@ -10,10 +10,14 @@
     .\scripts\lab.ps1 gui-l1     # https://localhost:8007 -> the L1 host
     .\scripts\lab.ps1 shell      # shell on the L1 host (then: sudo -i)
     .\scripts\lab.ps1 password   # root password for both UIs
+    .\scripts\lab.ps1 kubeconfig # save the Kubernetes kubeconfig to ~\.kube\proxmox-lab.yaml
+    .\scripts\lab.ps1 k8s        # tunnel the Kubernetes API to https://127.0.0.1:6443
+                                 # then, in another window:
+                                 #   $env:KUBECONFIG = "$HOME\.kube\proxmox-lab.yaml"; kubectl get nodes
 #>
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('status', 'gui', 'gui-l1', 'shell', 'password')]
+    [ValidateSet('status', 'gui', 'gui-l1', 'shell', 'password', 'kubeconfig', 'k8s')]
     [string]$Command
 )
 $ErrorActionPreference = 'Stop'
@@ -48,5 +52,33 @@ switch ($Command) {
     'password' {
         aws ssm get-parameter --name $out.root_password_param.value --with-decryption `
             --query Parameter.Value --output text --region $region
+    }
+    'kubeconfig' {
+        # Read the kubeconfig the kubernetes role wrote on the L1 host, and point
+        # it at the local end of the `k8s` tunnel (127.0.0.1 is in the API cert).
+        $cid = aws ssm send-command --region $region --instance-ids $id `
+            --document-name AWS-RunShellScript --parameters 'commands=cat /root/.kube/config' `
+            --query Command.CommandId --output text
+        do {
+            Start-Sleep -Seconds 2
+            $inv = aws ssm get-command-invocation --region $region --command-id $cid --instance-id $id --output json 2>$null |
+                ConvertFrom-Json
+        } while (-not $inv -or $inv.Status -in 'Pending', 'InProgress', 'Delayed')
+        if ($inv.Status -ne 'Success' -or -not $inv.StandardOutputContent) {
+            throw "Could not read the kubeconfig ($($inv.Status)). Is the cluster built? Try: .\scripts\lab.ps1 status"
+        }
+        $kubeconfig = $inv.StandardOutputContent -replace 'https://10\.10\.40\.10:6443', 'https://127.0.0.1:6443'
+        $dest = Join-Path $HOME '.kube\proxmox-lab.yaml'
+        New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
+        [IO.File]::WriteAllText($dest, $kubeconfig) # UTF-8 without BOM, which kubectl expects
+        Write-Host "Saved $dest"
+        Write-Host 'Next: .\scripts\lab.ps1 k8s   (leave it running), then in another window:'
+        Write-Host "  `$env:KUBECONFIG = `"$dest`"; kubectl get nodes"
+    }
+    'k8s' {
+        Write-Host 'Kubernetes API on https://127.0.0.1:6443. Ctrl+C to stop.'
+        aws ssm start-session --target $id --region $region `
+            --document-name AWS-StartPortForwardingSessionToRemoteHost `
+            --parameters 'host=10.10.40.10,portNumber=6443,localPortNumber=6443'
     }
 }

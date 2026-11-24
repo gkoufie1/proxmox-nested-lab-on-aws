@@ -38,6 +38,7 @@ flowchart LR
 |---|---|
 | Disk image builds and Proxmox boots on AWS | ✅ Verified (Nov 2026) |
 | Full 16-node cluster comes up (16 nodes + QDevice, quorate) | ✅ Verified (Nov 2026) |
+| Kubernetes on top (Phase 2: 3 + 3 Talos VMs) | 🧪 Written, **not yet tested** end to end |
 
 ## Quick start (Windows)
 
@@ -78,6 +79,7 @@ terraform -chdir=terraform destroy
 | `packer/` | Builds the Proxmox disk image |
 | `terraform/` | Creates the AWS network, permissions and server |
 | `ansible/` | Builds the 16-node cluster on the server |
+| `kubernetes/` | Phase 2 (untested): Talos Kubernetes VMs, run on the server after the cluster |
 | `scripts/` | `lab.ps1`: check progress, open the web UI, get the password |
 | `docs/` | Design details, trade-offs and roadmap |
 
@@ -87,4 +89,4 @@ terraform -chdir=terraform destroy
 cluster voting (quorum and QDevice), storage (ZFS, optional Ceph), the security
 design, and known limitations.
 
-**Coming next:** Kubernetes on the cluster, GitOps with Argo CD, backups, and CI checks.
+**Coming next:** verify Kubernetes (Phase 2), then GitOps with Argo CD, backups, and CI checks.

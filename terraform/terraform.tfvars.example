@@ -6,9 +6,10 @@ use_spot      = false # Spot + nested virtualization unavailable when tested
 ttl_hours     = 4
 
 node_count     = 16
-node_memory_mb = 6144
+node_memory_mb = 4096
 enable_qdevice = true
 enable_ceph    = false
+enable_kubernetes = true # Phase 2: Talos Kubernetes on the L1 host
 
 # Smaller and cheaper: 8 nodes on an m8i.4xlarge (64 GiB)
 # instance_type  = "m8i.4xlarge"

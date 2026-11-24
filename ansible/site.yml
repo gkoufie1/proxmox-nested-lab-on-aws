@@ -43,3 +43,12 @@
       ansible.builtin.include_role:
         name: ceph
       when: enable_ceph | bool
+
+- name: Kubernetes (Talos) on the L1 host
+  hosts: l1
+  gather_facts: false
+  tasks:
+    - name: Deploy Kubernetes
+      ansible.builtin.include_role:
+        name: kubernetes
+      when: enable_kubernetes | bool

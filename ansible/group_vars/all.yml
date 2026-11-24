@@ -3,10 +3,11 @@
 # root_password_param and vpc_dns.
 node_count: 16
 node_cores: 2
-node_memory_mb: 6144
+node_memory_mb: 4096
 cluster_name: lab16
 enable_qdevice: true
 enable_ceph: false
+enable_kubernetes: true
 aws_region: us-east-1
 root_password_param: /proxmox-lab/root-password
 vpc_dns: 10.200.0.2
@@ -39,3 +40,8 @@ node_mgmt_ip: "{{ lab_vlans.mgmt.prefix }}.{{ ip_offset + node_index | int }}"
 node_corosync_ip: "{{ lab_vlans.corosync.prefix }}.{{ ip_offset + node_index | int }}"
 first_node: "{{ groups['pve_nodes'][0] }}"
 first_node_mgmt_ip: "{{ lab_vlans.mgmt.prefix }}.{{ ip_offset + 1 }}"
+
+# Phase 2: Kubernetes (kubernetes/terraform, unpacked next to ansible/)
+k8s_tf_dir: /opt/lab/kubernetes/terraform
+talos_version: v1.14.6
+terraform_version: 1.16.4

@@ -1,0 +1,80 @@
+# Phase 2: Talos Kubernetes on the L1 host. Runs kubernetes/terraform (bundled
+# to /opt/lab/kubernetes) against the L1 Proxmox API, then checks that every
+# node is Ready. VMs sit at L2: inside the nested nodes (L3) a Talos VM
+# booted ~10x slower (22 s vs 210 s), see docs/architecture.md.
+
+- name: Install Terraform
+  ansible.builtin.unarchive:
+    src: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
+    dest: /usr/local/bin
+    remote_src: true
+    include: [terraform]
+    creates: /usr/local/bin/terraform
+
+- name: Install talosctl (matching the Talos version)
+  ansible.builtin.get_url:
+    url: "https://github.com/siderolabs/talos/releases/download/{{ talos_version }}/talosctl-linux-amd64"
+    dest: /usr/local/bin/talosctl
+    mode: "0755"
+
+- name: Latest stable kubectl version
+  ansible.builtin.uri:
+    url: https://dl.k8s.io/release/stable.txt
+    return_content: true
+  register: kubectl_stable
+
+- name: Install kubectl
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_stable.content | trim }}/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: "0755"
+
+- name: Terraform init
+  ansible.builtin.command: terraform init -input=false
+  args:
+    chdir: "{{ k8s_tf_dir }}"
+  environment:
+    TF_IN_AUTOMATION: "1"
+  changed_when: false
+
+- name: Terraform apply (VMs, Talos install, bootstrap, health check; ~10-15 min)
+  ansible.builtin.command: terraform apply -input=false -auto-approve -no-color
+  args:
+    chdir: "{{ k8s_tf_dir }}"
+  environment:
+    TF_IN_AUTOMATION: "1"
+    TF_VAR_proxmox_password: "{{ lab_root_password }}"
+    TF_VAR_talos_version: "{{ talos_version }}"
+  register: k8s_apply
+  changed_when: "'0 added, 0 changed, 0 destroyed' not in k8s_apply.stdout"
+
+- name: Config directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop: [/root/.kube, /root/.talos]
+
+- name: Write kubeconfig and talosconfig
+  ansible.builtin.shell: |
+    set -euo pipefail
+    terraform output -raw kubeconfig > /root/.kube/config
+    terraform output -raw talosconfig > /root/.talos/config
+    chmod 600 /root/.kube/config /root/.talos/config
+  args:
+    chdir: "{{ k8s_tf_dir }}"
+    executable: /bin/bash
+  changed_when: false
+
+- name: Wait for every node to be Ready
+  ansible.builtin.command: kubectl wait --for=condition=Ready nodes --all --timeout=600s
+  changed_when: false
+
+- name: Cluster nodes
+  ansible.builtin.command: kubectl get nodes -o wide
+  register: k8s_nodes
+  changed_when: false
+
+- name: Show the cluster
+  ansible.builtin.debug:
+    msg: "{{ k8s_nodes.stdout_lines }}"

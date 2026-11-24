@@ -102,9 +102,20 @@ These parts are written but haven't been run end to end yet. Check them in this 
 
 ## Roadmap
 
-- **Phase 2: Kubernetes.** Talos VMs on VLAN 40 (Terraform `bpg/proxmox` +
-  `siderolabs/talos`), Cilium with BGP to the L1 router (FRR), and Ceph RBD CSI.
-  If L3 KVM proves unusable, run the Talos VMs on L1 directly.
+- **Phase 2: Kubernetes. Written, NOT yet verified end to end.**
+  `kubernetes/terraform` (bpg/proxmox + siderolabs/talos) creates 3 control-plane
+  and 3 worker Talos VMs on VLAN 40 (`10.10.40.11-13`, `.21-23`, API VIP
+  `10.10.40.10`), installs Talos, bootstraps Kubernetes and waits for health.
+  The Ansible `kubernetes` role runs it on the L1 host at the end of the bootstrap.
+  - **Placement: on the L1 host (L2), not inside the nested nodes (L3).** A Talos
+    VM booted in 22 s on L1 and in 210 s inside pve01 (2026-11-23), and API calls
+    took 40 ms vs 99 ms. L3 works but is ~10× slower for CPU-heavy work. The
+    nested nodes drop to 4 GiB each to make room (~21 GiB for the six VMs).
+  - **Tested so far:** on the L1 host the role installed Terraform, talosctl and
+    kubectl and ran `terraform init`; the lab was destroyed as `terraform apply`
+    started. The VM creation, Talos install and bootstrap are untested.
+  - **Next:** Cilium (with BGP to FRR on the L1 host) in place of the default
+    flannel, and Ceph RBD CSI.
 - **Phase 3: GitOps.** Argo CD bootstrapped from this repo, plus kube-prometheus-stack.
 - **Phase 4: Backup / DR.** Proxmox Backup Server as an L2 VM with an S3
   datastore, and a restore drill with measured RTO/RPO.
