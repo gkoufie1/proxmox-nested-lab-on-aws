@@ -40,6 +40,26 @@ flowchart LR
 | Full 16-node cluster comes up (16 nodes + QDevice, quorate) | ✅ Verified (Nov 2026) |
 | Kubernetes on top (Phase 2: 3 + 3 Talos VMs) | 🧪 Written, **not yet tested** end to end |
 
+## Screenshots
+
+From the first full run (Nov 2026).
+
+**The cluster:** `lab16` quorate, 16 of 16 nodes online.
+
+![Proxmox datacenter summary: cluster lab16 quorate, 16 nodes online](docs/screenshots/proxdashboard.png)
+
+**All 16 nodes** in the Proxmox VE 9.2 web UI, reached through the SSM tunnel (`.\scripts\lab.ps1 gui`).
+
+![Proxmox web UI listing nodes pve01 to pve16](docs/screenshots/proxgui.png)
+
+**The AWS side:** the server is managed through SSM only (no SSH, no open ports), shown here in Fleet Manager…
+
+![AWS Systems Manager Fleet Manager showing the lab server online](docs/screenshots/proxsysman.png)
+
+…and registered with Patch Manager (no patch policy configured yet).
+
+![AWS Systems Manager Patch Manager listing the lab server](docs/screenshots/proxpatchmanager.png)
+
 ## Quick start (Windows)
 
 **You need:** Terraform, Packer, AWS CLI v2, the
