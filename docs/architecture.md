@@ -26,9 +26,9 @@
 
 | VLAN | Name | Subnet | Node NIC | Purpose |
 |---|---|---|---|---|
-| 10 | mgmt | 10.10.10.0/24 | ens18 | UI/API, SSH, default route via 10.10.10.1, corosync link1 |
-| 20 | corosync | 10.10.20.0/24 | ens19 | Corosync link0, isolated from bulk traffic |
-| 30 | ceph | 10.10.30.0/24 | ens20 | Ceph public + cluster (one network in the lab) |
+| 10 | mgmt | 10.10.10.0/24 | eth0 | UI/API, SSH, default route via 10.10.10.1, corosync link1 |
+| 20 | corosync | 10.10.20.0/24 | eth1 | Corosync link0, isolated from bulk traffic |
+| 30 | ceph | 10.10.30.0/24 | eth2 | Ceph public + cluster (one network in the lab) |
 | 40 | k8s | 10.10.40.0/24 | ens21 (trunk → vmbr0) | Guest VLAN for Kubernetes VMs |
 | 50 | services | 10.10.50.0/24 | ens21 (trunk → vmbr0) | Guest VLAN for services |
 
@@ -94,7 +94,7 @@ These parts are written but haven't been run end to end yet. Check them in this 
    on-demand r8i.4xlarge launches with `NestedVirtualization: enabled`.
 3. **Spot + nested virtualization.** Not available when tested (see Decisions).
    Retry with `use_spot = true` occasionally; the fleet fails fast if it still isn't.
-4. **Guest NIC names.** The roles assume `ens18`–`ens21` (i440fx + virtio). Check with `ip -br link` on pve01.
+4. ~~**Guest NIC names.**~~ **Verified:** cloud-init renames the three addressed NICs to `eth0`–`eth2`; the unaddressed trunk keeps `ens21`, which is what vmbr0 uses. At boot `ifup` failed to create vmbr0 (`recv() error: Invalid argument`), so the role now runs `ifreload -a` when vmbr0 is missing.
 5. **L3 KVM.** VMs *inside* the nested nodes need a third level of
    virtualization. L1 exposes `vmx` to L2 (`--cpu host`), but performance and
    stability on EC2 are unknown. LXC containers on the nested nodes need no virtualization.

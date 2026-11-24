@@ -74,6 +74,18 @@
     reboot_timeout: 900
   when: not pveversion.stat.exists
 
+# At boot, ifup hit "recv() error: [Errno 22] Invalid argument" and skipped
+# vmbr0 on every node; the config itself is fine, so apply it explicitly.
+- name: Is the guest bridge up?
+  ansible.builtin.command: ip link show vmbr0
+  register: vmbr0
+  failed_when: false
+  changed_when: false
+
+- name: Bring up the guest bridge
+  ansible.builtin.command: ifreload -a
+  when: vmbr0.rc != 0
+
 - name: Set the root password (Proxmox UI login, realm PAM)
   ansible.builtin.shell: echo 'root:{{ hostvars['localhost'].lab_root_password }}' | chpasswd
   changed_when: false

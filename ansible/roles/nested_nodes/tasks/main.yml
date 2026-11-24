@@ -1,9 +1,9 @@
 # Creates the nested Proxmox nodes as VMs on the L1 host: Debian 13 cloud
 # image -> template -> linked clones, addressed by cloud-init.
 #
-#   net0  VLAN 10  mgmt      ens18   10.10.10.(10+n)  default route
-#   net1  VLAN 20  corosync  ens19   10.10.20.(10+n)
-#   net2  VLAN 30  ceph      ens20   10.10.30.(10+n)
+#   net0  VLAN 10  mgmt      eth0    10.10.10.(10+n)  default route
+#   net1  VLAN 20  corosync  eth1    10.10.20.(10+n)
+#   net2  VLAN 30  ceph      eth2    10.10.30.(10+n)
 #   net3  trunk 40,50        ens21   bridged to guests inside the node
 
 - name: Create the import directory (a fresh Proxmox install doesn't have it)
