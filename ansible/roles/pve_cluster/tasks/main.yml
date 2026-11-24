@@ -14,10 +14,15 @@
     - inventory_hostname == first_node
     - not corosync_conf.stat.exists
 
+# pvecm add once exited 0 without joining (pve02, first full run), so check
+# for its success line instead of trusting the exit code; on failure Ansible
+# prints the full output.
 - name: Join the cluster
   ansible.builtin.command: >-
     pvecm add {{ first_node_mgmt_ip }} --use_ssh 1
     --link0 {{ node_corosync_ip }} --link1 {{ node_mgmt_ip }}
+  register: pvecm_add
+  failed_when: "'successfully added node' not in pvecm_add.stdout"
   when:
     - inventory_hostname != first_node
     - not corosync_conf.stat.exists
