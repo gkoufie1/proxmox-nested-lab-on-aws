@@ -27,6 +27,8 @@ $out = terraform "-chdir=$tfDir" output -json | ConvertFrom-Json
 if (-not $out.instance_id) { throw 'No Terraform outputs - run terraform apply first.' }
 $id = $out.instance_id.value
 $region = $out.region.value
+# Use the same AWS CLI profile Terraform used, so commands hit the lab's account
+if ($out.aws_profile.value) { $env:AWS_PROFILE = $out.aws_profile.value }
 
 switch ($Command) {
     'status' {

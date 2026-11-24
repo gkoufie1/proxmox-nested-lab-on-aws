@@ -6,6 +6,11 @@ output "region" {
   value = var.region
 }
 
+output "aws_profile" {
+  description = "AWS CLI profile scripts/lab.ps1 uses (null = default)."
+  value       = var.aws_profile
+}
+
 output "candidate_availability_zones" {
   description = "AZs the fleet could launch into."
   value       = local.azs

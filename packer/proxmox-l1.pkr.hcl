@@ -27,6 +27,14 @@ variable "build_instance_types" {
   default = ["t3.medium", "t3a.medium", "m7i.large", "m6i.large"]
 }
 
+# AWS CLI profile to build with; empty uses the default credential chain.
+#   packer build -var aws_profile=my-profile .
+# or set it in a git-ignored *.auto.pkrvars.hcl file.
+variable "aws_profile" {
+  type    = string
+  default = ""
+}
+
 locals {
   stamp = formatdate("YYYYMMDD-hhmm", timestamp())
   sudo  = "chmod +x '{{ .Path }}'; sudo -E env {{ .Vars }} bash '{{ .Path }}'"
@@ -34,6 +42,7 @@ locals {
 
 source "amazon-ebs" "proxmox_l1" {
   region              = var.region
+  profile             = var.aws_profile
   spot_instance_types = var.build_instance_types
   spot_price          = "auto"
   ami_name            = "proxmox-ve9-l1-${local.stamp}"

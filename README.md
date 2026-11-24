@@ -72,6 +72,7 @@ cd packer; packer init .; packer build .; cd ..
 
 # 2. Start the lab
 copy terraform\terraform.tfvars.example terraform\terraform.tfvars
+#    then set aws_account_id in it: Terraform refuses to touch any other account
 terraform -chdir=terraform init
 terraform -chdir=terraform apply
 

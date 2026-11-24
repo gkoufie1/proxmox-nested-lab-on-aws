@@ -9,6 +9,22 @@ variable "region" {
   default = "us-east-1"
 }
 
+variable "aws_account_id" {
+  description = "The only AWS account Terraform may touch. Any other account's credentials make plan/apply fail before creating anything."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.aws_account_id))
+    error_message = "aws_account_id must be a 12-digit AWS account ID."
+  }
+}
+
+variable "aws_profile" {
+  description = "AWS CLI profile to use. Null uses the default credential chain."
+  type        = string
+  default     = null
+}
+
 variable "availability_zone" {
   description = "Pin the lab to one AZ. Null (recommended) lets the fleet pick any AZ that offers instance_type and has capacity."
   type        = string

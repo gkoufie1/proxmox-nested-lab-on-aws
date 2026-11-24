@@ -19,7 +19,11 @@ terraform {
 }
 
 provider "aws" {
-  region = var.region
+  region  = var.region
+  profile = var.aws_profile
+
+  # Refuse to plan or apply if the credentials belong to any other account
+  allowed_account_ids = [var.aws_account_id]
 
   default_tags {
     tags = {
